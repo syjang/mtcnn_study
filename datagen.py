@@ -7,6 +7,7 @@ import numpy as np
 import cv2
 import utils
 
+
 widerface_images_dir = 'dataset/wider_images'
 widerface_annos_dir = 'dataset'
 widerface_annos_file = 'wider_face_train_bbx_gt.txt'
@@ -19,15 +20,17 @@ celeba_annos_file = 'list_landmarks_align_celeba.txt'
 DataState = Enum('DataState', ('stop', 'next'))
 
 
-def widerface_data_loader(skip=0):
+def widerface_data_loader(skip=0, **kwargs):
     """
         generator function
+
         load data from WIDER FACE dataset
+
         params from kwargs: widerface_images_dir, widerface_annos_dir, widerface_annos_file 
     """
-    images_dir = widerface_images_dir
-    annos_dir = widerface_annos_dir
-    annos_file = widerface_annos_file
+    images_dir = kwargs.get('widerface_images_dir', widerface_images_dir)
+    annos_dir = kwargs.get('widerface_annos_dir', widerface_annos_dir)
+    annos_file = kwargs.get('widerface_annos_file', widerface_annos_file)
 
     annos_path = os.path.join(annos_dir, annos_file)
     lines = linecache.getlines(annos_path)
@@ -61,13 +64,24 @@ def widerface_data_loader(skip=0):
             if response == DataState.stop:
                 return
 
-            idx += 1 + n_faces + 1
+            # idx += 1 + n_faces + 1
+            if n_faces == 0:
+                idx += 3
+            else:
+                idx += 1 + n_faces + 1
 
 
 def celeba_data_loader(skip=0, **kwargs):
-    images_dir = celeba_images_dir
-    annos_dir = celeba_annos_dir
-    annos_file = celeba_annos_file
+    """
+        generator function
+
+        load data from CelebA dataset
+
+        params from kwargs: celeba_images_dir, celeba_annos_dir, celeba_annos_file 
+    """
+    images_dir = kwargs.get('celeba_images_dir', celeba_images_dir)
+    annos_dir = kwargs.get('celeba_annos_dir', celeba_annos_dir)
+    annos_file = kwargs.get('celeba_annos_file', celeba_annos_file)
 
     annos_path = os.path.join(annos_dir, annos_file)
     lines = linecache.getlines(annos_path)
@@ -105,9 +119,10 @@ class SampleType(Enum):
     landmark = 3
 
 
-def augmented_data_generator(d_size, m_size):
+def augmented_data_generator(dst_size, min_face):
     """
         training data generator for MTCNN
+
         @param dst_size: output image size (dst_size, dst_size)
         @param pos_cnt: expected count of positive samples in a batch
         @param part_cnt:  expected count of partial samples in a batch
@@ -116,16 +131,51 @@ def augmented_data_generator(d_size, m_size):
         @param double_aug: if set to True, the size of batches will double (using image augmentaion)
         @param skip: if nonzero, given number of images will be skipped (default zero)
         @param min_face: minimum face size
+
         according to the paper, pos_cnt : part_cnt : neg_cnt : ldmk_cnt should be 1 : 1 : 3 : 2
+
     """
-    dst_size = d_size
+    dst_size = dst_size
     pos_cnt = 10
     part_cnt = 10
     neg_cnt = 30
     ldmk_cnt = 20
     double_aug = False
     skip = 0
-    min_face = m_size
+    min_face = min_face
+    """
+        record data format: 
+        [ type, cls_0, cls1] [ type, bbox1, ..., bbox4 ] [ type, ldmk1, ... ldmk10 ]
+
+        for positivie samples:
+            type = SampleType.positive.value
+            cls_0 = 0, cls_1 = 1
+            bboxes: real
+            ldmks: nan
+        
+        for negative samples:
+            type = SampleType.negative.value
+            cls_0 = 1, cls_1 = 0
+            bboxes: real
+            ldmks: nan
+        
+        for partial samples:
+            type = SampleType.partial.value
+            cls: nan
+            bboxes: real
+            ldmks: nan
+        
+        for landmark samples:
+            type = SampleType.landmark.value
+            cls: nan
+            bboxes: nan
+            ldmks: real
+    """
+    """
+    # positive IoU threshold: 0.65+
+    # partial IoU threshold: 0.4 - 0.65
+    # negative IoU threshold: 0.3-
+    """
 
     #pos_threshold_low = 0.65
     #neg_threshold_high = 0.3
@@ -173,9 +223,9 @@ def augmented_data_generator(d_size, m_size):
                     cls_0, cls_1 = 0, 1
 
                 dummy_ldmks = [np.nan] * 10
-                face_cls.append([cls_0, cls_1])
-                bbox_reg.append([dx1, dy1, dx2, dy2])
-                ldmk_reg.append(dummy_ldmks)
+                face_cls.append([label.value, cls_0, cls_1])
+                bbox_reg.append([label.value, dx1, dy1, dx2, dy2])
+                ldmk_reg.append([label.value] + dummy_ldmks)
 
                 cropped = utils.crop_image(im, crbox)
                 resized = cv2.resize(cropped, (dst_size, dst_size))
@@ -288,9 +338,10 @@ def augmented_data_generator(d_size, m_size):
 
                     dummy_cls_bbox = [np.nan] * 4
                     face_cls.append(
-                        [np.nan, np.nan])
-                    bbox_reg.append(dummy_cls_bbox)
-                    ldmk_reg.append(d_ldmks)
+                        [SampleType.landmark.value, np.nan, np.nan])
+                    bbox_reg.append(
+                        [SampleType.landmark.value] + dummy_cls_bbox)
+                    ldmk_reg.append([SampleType.landmark.value] + d_ldmks)
             except:
                 continue
 

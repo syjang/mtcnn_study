@@ -1,0 +1,6 @@
+.vscode
+
+*.exe
+dataset
+logs
+__pycache__

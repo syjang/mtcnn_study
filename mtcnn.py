@@ -18,10 +18,10 @@ def make_pnet(train=False):
     x = layers.Conv2D(32, kernel_size=(3, 3))(x)
     x = layers.PReLU(shared_axes=[1, 2])(x)
 
-    classifier = layers.Conv2D(2, 1, activation='softmax', name='face_cls')(x)
-    bbox_regress = layers.Conv2D(4, 1, name='bbox_reg')(x)
+    classifier = layers.Conv2D(3, 1, activation='softmax', name='face_cls')(x)
+    bbox_regress = layers.Conv2D(5, 1, name='bbox_reg')(x)
     landmark_regress = layers.Conv2D(
-        10, 1, name='ldmk_reg')(x)
+        11, 1, name='ldmk_reg')(x)
 
     # outputs = layers.Concatenate()(
     # [classifier, bbox_regress, landmark_regress])
@@ -49,9 +49,9 @@ def make_rnet(train=False):
     x = layers.Dense(128)(x)
     x = layers.PReLU()(x)
 
-    classifier = layers.Dense(2, activation='sigmoid', name='face_cls')(x)
-    bbox_regress = layers.Dense(4, name='bbox_reg')(x)
-    landmark_regress = layers.Dense(10, name='ldmk_reg')(x)
+    classifier = layers.Dense(3, activation='softmax', name='face_cls')(x)
+    bbox_regress = layers.Dense(5, name='bbox_reg')(x)
+    landmark_regress = layers.Dense(11, name='ldmk_reg')(x)
 
     # outputs = layers.Concatenate()(
     #     [classifier, bbox_regress, landmark_regress])
@@ -84,9 +84,9 @@ def make_onet(train=False):
     x = layers.Dense(256)(x)
     x = layers.PReLU()(x)
 
-    classifier = layers.Dense(2, activation='sigmoid', name='face_cls')(x)
-    bbox_regress = layers.Dense(4, name='bbox_reg')(x)
-    landmark_regress = layers.Dense(10, name='ldmk_reg')(x)
+    classifier = layers.Dense(3, activation='softmax', name='face_cls')(x)
+    bbox_regress = layers.Dense(5, name='bbox_reg')(x)
+    landmark_regress = layers.Dense(11, name='ldmk_reg')(x)
 
     # outputs = layers.Concatenate()(
     #     [classifier, bbox_regress, landmark_regress])
