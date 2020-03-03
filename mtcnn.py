@@ -1,109 +1,158 @@
-import tensorflow as tf
+import tensorflow.keras as keras
+import numpy as np
 
-from tensorflow.keras import models
-from tensorflow.keras import layers
-
-
-def make_pnet(train=False):
-    if train:
-        input = layers.Input(shape=[12, 12, 3])
-    else:
-        input = layers.Input(shape=(None, None, 3), name='Pnet_input')
-
-    x = layers.Conv2D(10, kernel_size=(3, 3))(input)
-    x = layers.PReLU(shared_axes=[1, 2])(x)
-    x = layers.MaxPooling2D(pool_size=2)(x)
-    x = layers.Conv2D(16, kernel_size=(3, 3))(x)
-    x = layers.PReLU(shared_axes=[1, 2])(x)
-    x = layers.Conv2D(32, kernel_size=(3, 3))(x)
-    x = layers.PReLU(shared_axes=[1, 2])(x)
-
-    classifier = layers.Conv2D(3, 1, activation='softmax', name='face_cls')(x)
-    bbox_regress = layers.Conv2D(5, 1, name='bbox_reg')(x)
-    landmark_regress = layers.Conv2D(
-        11, 1, name='ldmk_reg')(x)
-
-    # outputs = layers.Concatenate()(
-    # [classifier, bbox_regress, landmark_regress])
-    outputs = [classifier, bbox_regress, landmark_regress]
-
-    model = models.Model(input, outputs)
-    return model
+import cv2
+import model
+import utils
 
 
-def make_rnet(train=False):
-    input = layers.Input(shape=(24, 24, 3))
+class MTCNN(object):
+    def __init__(self, min_face_size: int = 24, scale: float = 0.709):
+        self.min_face_size = min_face_size
+        self.scale_factor = scale
 
-    x = layers.Conv2D(28, kernel_size=(3, 3))(input)
-    x = layers.PReLU(shared_axes=[1, 2])(x)
-    x = layers.MaxPooling2D(pool_size=3, strides=2)(x)
+    @staticmethod
+    def generate_bboxes_with_scores(cls_map, scale, threshold=0.5, size=12, stride=2):
+        """
+            generate bounding boxes from score map
 
-    x = layers.Conv2D(48, kernel_size=(3, 3))(x)
-    x = layers.PReLU(shared_axes=[1, 2])(x)
-    x = layers.MaxPooling2D(pool_size=3, strides=2)(x)
+            @param cls_map: PNet's output feature map for classification
+            @param scale: the scale of the image feed to PNet, used to 
+                convert bbox coordinates of the resized image into coordinates
+                of the original image 
+            @param threshold: classification score threshold
+            @param size: bbox size (size, size) (default 12)
+            @param stride: the stride for bbox generation (default 2)
+        """
+        assert len(cls_map.shape) == 2
 
-    x = layers.Conv2D(64, kernel_size=(2, 2))(x)
-    x = layers.PReLU(shared_axes=[1, 2])(x)
+        indices = np.where(cls_map >= threshold)
+        bboxes = np.concatenate((
+            ((indices[1] * stride) / scale).reshape(-1, 1),
+            ((indices[0] * stride) / scale).reshape(-1, 1),
+            ((indices[1] * stride + size) / scale).reshape(-1, 1),
+            ((indices[0] * stride + size) / scale).reshape(-1, 1),
+            cls_map[indices].reshape(-1, 1)
+        ), axis=1)
+        return bboxes, indices
 
-    x = layers.Flatten()(x)
-    x = layers.Dense(128)(x)
-    x = layers.PReLU()(x)
+    def get_image_pyramid_scales(self, min_size: int, img_size: tuple):
+        m = min(img_size)
+        scales = []
+        scale = 1
 
-    classifier = layers.Dense(3, activation='softmax', name='face_cls')(x)
-    bbox_regress = layers.Dense(5, name='bbox_reg')(x)
-    landmark_regress = layers.Dense(11, name='ldmk_reg')(x)
+        while m >= min_size:
+            scales.append(scale)
+            scale *= self.scale_factor
+            m *= self.scale_factor
+        return scales
 
-    # outputs = layers.Concatenate()(
-    #     [classifier, bbox_regress, landmark_regress])
+    @staticmethod
+    def non_maximum_suppression(boxes, threshold: float, mode: str = 'union'):
+        """
+            Non Maximum Suppression
 
-    outputs = [classifier, bbox_regress, landmark_regress]
-    model = models.Model(input, outputs)
+            @return: indices of remained boxes
+        """
+        assert boxes.shape[1] == 5
+        assert mode in ('union', 'minimum')
 
-    return model
+        x1, y1 = boxes[:, 0], boxes[:, 1]
+        x2, y2 = boxes[:, 2], boxes[:, 3]
+        scores = boxes[:, 4]
+
+        areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+        order = scores.argsort()[::-1]
+
+        result = []
+        while order.size > 0:
+            i = order[0]
+            others = order[1:]
+            result.append(i)
+
+            ix1 = np.maximum(x1[i], x1[others])
+            iy1 = np.maximum(y1[i], y1[others])
+            ix2 = np.minimum(x2[i], x2[others])
+            iy2 = np.minimum(y2[i], y2[others])
+
+            w = np.maximum(ix2 - ix1 + 1, 0)
+            h = np.maximum(iy2 - iy1 + 1, 0)
+            intersect = w * h
+
+            if mode == 'union':
+                iou = intersect / (areas[i] + areas[others] - intersect)
+            elif mode == 'minimum':
+                iou = intersect / (np.minimum(areas[i], areas[others]))
+
+            i = np.where(iou <= threshold)[0]
+            order = order[i + 1]
+        return np.array(result, dtype=np.int32)
+
+    @staticmethod
+    def refine_bboxes(boxes, reg_offsets, transform=lambda x: x.astype(np.int32).reshape(-1, 1)):
+        w = boxes[:, 2] - boxes[:, 0] + 1
+        h = boxes[:, 3] - boxes[:, 1] + 1
+
+        refined_boxes = np.concatenate((
+            transform(boxes[:, 0] + reg_offsets[:, 0] * w),
+            transform(boxes[:, 1] + reg_offsets[:, 1] * h),
+            transform(boxes[:, 2] + reg_offsets[:, 2] * w),
+            transform(boxes[:, 3] + reg_offsets[:, 3] * h)
+        ), axis=1)
+        return refined_boxes
+
+    def stage_PNet(self, model, img):
+        h, w, _ = img.shape
+        img_size = (w, h)
+
+        boxes_tot = np.empty((0, 5))
+        reg_offsets = np.empty((0, 4))
+
+        scales = self.get_image_pyramid_scales(self.min_face_size, img_size)
+
+        print(scales)
+
+        for scale in scales:
+            resized = utils.scale_image(img, scale)
+            normalized = utils.normalize_image(resized)
+            net_input = np.expand_dims(normalized, 0)
+
+            cls_map, reg_map, _ = model.predict(net_input)
+            cls_map = cls_map.squeeze()[:, :, 1]  # here
+            reg_map = reg_map.squeeze()
+
+            boxes, indices = self.generate_bboxes_with_scores(cls_map, scale)
+            reg_deltas = reg_map[indices]
+
+            indices = self.non_maximum_suppression(boxes, 0.5, 'union')
+            boxes_tot = np.append(boxes_tot, boxes[indices], axis=0)
+            reg_offsets = np.append(reg_offsets, reg_deltas[indices], axis=0)
+
+        indices = self.non_maximum_suppression(boxes_tot, 0.7, 'union')
+        boxes_tot = boxes_tot[indices]
+        reg_offsets = reg_offsets[indices]
+
+        # refine bounding boxes
+        refined_boxes = self.refine_bboxes(boxes_tot, reg_offsets)
+        return refined_boxes
 
 
-def make_onet(train=False):
-    input = layers.Input(shape=(48, 48, 3))
+if __name__ == '__main__':
 
-    x = layers.Conv2D(32, kernel_size=(3, 3))(input)
-    x = layers.PReLU(shared_axes=[1, 2])(x)
-    x = layers.MaxPooling2D(pool_size=3, strides=2)(x)
+    img = cv2.imread(
+        'dataset/wider_images/0--Parade/0_Parade_marchingband_1_5.jpg')
 
-    x = layers.Conv2D(64, kernel_size=(3, 3))(x)
-    x = layers.PReLU(shared_axes=[1, 2])(x)
-    x = layers.MaxPooling2D(pool_size=3, strides=2)(x)
+    mtcnn = MTCNN(min_face_size=48, scale=0.8)
 
-    x = layers.Conv2D(64, kernel_size=(2, 2))(x)
-    x = layers.PReLU(shared_axes=[1, 2])(x)
-    x = layers.MaxPooling2D(pool_size=2)(x)
+    PNet = model.make_pnet(train=False)
+    PNet.load_weights('model_pnet.h5')
 
-    x = layers.Conv2D(128, kernel_size=(2, 2))(x)
-    x = layers.PReLU(shared_axes=[1, 2])(x)
+    bboxes = mtcnn.stage_PNet(PNet, img)
+    print('bbox count: ', bboxes.shape[0])
+    for box in bboxes:
+        x1, y1, x2, y2 = box
+        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0))
 
-    x = layers.Flatten()(x)
-    x = layers.Dense(256)(x)
-    x = layers.PReLU()(x)
-
-    classifier = layers.Dense(3, activation='softmax', name='face_cls')(x)
-    bbox_regress = layers.Dense(5, name='bbox_reg')(x)
-    landmark_regress = layers.Dense(11, name='ldmk_reg')(x)
-
-    # outputs = layers.Concatenate()(
-    #     [classifier, bbox_regress, landmark_regress])
-
-    outputs = [classifier, bbox_regress, landmark_regress]
-    # model = models.Model(input, [classifier, bbox_regress, landmark_regress])
-    model = models.Model(input, outputs)
-    return model
-
-
-# md = make_pnet(True)
-# md.summary()
-# md.compile(loss=tensorflow.keras.loss.)
-
-# md2 = make_rnet(False)
-# md2.summary()
-
-
-# md3 = make_onet(False)
-# md3.summary()
+    print(bboxes)
+    cv2.imshow('detection', img)
+    cv2.waitKey(0)
