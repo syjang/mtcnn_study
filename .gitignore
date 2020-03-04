@@ -5,3 +5,5 @@ dataset
 logs
 __pycache__
 savedmodel
+.ipynb_checkpoints
+*.jpg

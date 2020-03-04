@@ -121,7 +121,8 @@ class MTCNN(object):
             cls_map = cls_map.squeeze()[:, :, 1]  # here
             reg_map = reg_map.squeeze()
 
-            boxes, indices = self.generate_bboxes_with_scores(cls_map, scale)
+            boxes, indices = self.generate_bboxes_with_scores(
+                cls_map, scale, threshold=0.7)
             reg_deltas = reg_map[indices]
 
             indices = self.non_maximum_suppression(boxes, 0.5, 'union')
@@ -139,15 +140,14 @@ class MTCNN(object):
 
 if __name__ == '__main__':
 
-    img = cv2.imread(
-        'dataset/wider_images/0--Parade/0_Parade_marchingband_1_5.jpg')
+    img = cv2.imread('004.jpg')
 
-    mtcnn = MTCNN(min_face_size=48, scale=0.8)
+    mtcnn = MTCNN()
 
-    PNet = model.make_pnet(train=False)
-    PNet.load_weights('model_pnet.h5')
+    model = model.make_pnet(train=False)
+    model.load_weights('savedmodel/model_pnet.h5')
 
-    bboxes = mtcnn.stage_PNet(PNet, img)
+    bboxes = mtcnn.stage_PNet(model, img)
     print('bbox count: ', bboxes.shape[0])
     for box in bboxes:
         x1, y1, x2, y2 = box

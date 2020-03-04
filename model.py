@@ -3,6 +3,8 @@ import tensorflow as tf
 from tensorflow.keras import models
 from tensorflow.keras import layers
 
+SampleLabelFilter = layers.Lambda(lambda x: x[..., 1:])
+
 
 def make_pnet(train=True):
     if train:
@@ -29,6 +31,11 @@ def make_pnet(train=True):
         bbox_regress = layers.Reshape((5,), name='bbox_reg')(bbox_regress)
         landmark_regress = layers.Reshape(
             (11,), name='ldmk_reg')(landmark_regress)
+    else:
+        classifier = SampleLabelFilter(classifier)
+        classifier = layers.Activation('softmax')(classifier)
+        bbox_regress = SampleLabelFilter(bbox_regress)
+        landmark_regress = SampleLabelFilter(landmark_regress)
 
     outputs = [classifier, bbox_regress, landmark_regress]
 
