@@ -133,7 +133,7 @@ def f1_score(y_true, y_pred):
 
 if __name__ == "__main__":
 
-    net = 'p'
+    net = 'o'
 
     if net == 'o':
         model = model.make_onet()

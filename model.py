@@ -61,11 +61,11 @@ def make_rnet(train=True):
     x = layers.Dense(128)(x)
     x = layers.PReLU()(x)
 
-    if train:
-        classifier = layers.Dense(3, activation='softmax', name='face_cls')(x)
-        bbox_regress = layers.Dense(5, name='bbox_reg')(x)
-        landmark_regress = layers.Dense(11, name='ldmk_reg')(x)
-    else:
+    classifier = layers.Dense(3, activation='softmax', name='face_cls')(x)
+    bbox_regress = layers.Dense(5, name='bbox_reg')(x)
+    landmark_regress = layers.Dense(11, name='ldmk_reg')(x)
+
+    if train is False:
         classifier = SampleLabelFilter(classifier)
         classifier = layers.Activation('softmax')(classifier)
         bbox_regress = SampleLabelFilter(bbox_regress)
@@ -102,11 +102,11 @@ def make_onet(train=True):
     x = layers.Dense(256)(x)
     x = layers.PReLU()(x)
 
-    if train:
-        classifier = layers.Dense(3, activation='softmax', name='face_cls')(x)
-        bbox_regress = layers.Dense(5, name='bbox_reg')(x)
-        landmark_regress = layers.Dense(11, name='ldmk_reg')(x)
-    else:
+    classifier = layers.Dense(3, activation='softmax', name='face_cls')(x)
+    bbox_regress = layers.Dense(5, name='bbox_reg')(x)
+    landmark_regress = layers.Dense(11, name='ldmk_reg')(x)
+
+    if train is False:
         classifier = SampleLabelFilter(classifier)
         classifier = layers.Activation('softmax')(classifier)
         bbox_regress = SampleLabelFilter(bbox_regress)
