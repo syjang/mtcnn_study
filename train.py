@@ -10,7 +10,7 @@ from tensorflow.keras import models
 from tensorflow.keras import layers
 import tensorflow.keras.backend as K
 
-import model
+import models
 import datagen
 from datagen import SampleType
 
@@ -133,53 +133,55 @@ def f1_score(y_true, y_pred):
 
 if __name__ == "__main__":
 
-    net = 'o'
+    # net = 'o'
 
-    if net == 'o':
-        model = model.make_onet()
-        loss = {'face_cls': face_cls_loss, 'bbox_reg': bbox_reg_smooth_l1_loss,
-                'ldmk_reg': ldmk_reg_smooth_l1_loss}
-        loss_weights = {'face_cls': 1.0, 'bbox_reg': 0.5, 'ldmk_reg': 1.0}
-        metrics = {'face_cls': [precision, f1_score, accuracy]}
-        net_input_size = 48
-        saved_name = "savedmodel/model_onet.h5"
-    elif net == 'p':
-        model = model.make_pnet()
-        loss = {'face_cls': face_cls_loss, 'bbox_reg': bbox_reg_mse_loss,
-                'ldmk_reg': ldmk_reg_mse_loss}
-        loss_weights = {'face_cls': 1.0, 'bbox_reg': 0.5, 'ldmk_reg': 0.5}
-        metrics = {'face_cls': [recall, accuracy]}
-        net_input_size = 12
-        saved_name = "savedmodel/model_pnet.h5"
-    elif net == 'r':
-        model = model.make_rnet()
-        loss = {'face_cls': face_cls_loss, 'bbox_reg': bbox_reg_smooth_l1_loss,
-                'ldmk_reg': ldmk_reg_smooth_l1_loss}
-        loss_weights = {'face_cls': 1.0, 'bbox_reg': 0.5, 'ldmk_reg': 0.5}
-        metrics = {'face_cls': [precision, f1_score, accuracy]}
-        net_input_size = 24
-        saved_name = "savedmodel/model_rnet.h5"
+    for i in range(3):
 
-    model.load_weights(saved_name)
+        if i == 0:
+            model = models.make_onet()
+            loss = {'face_cls': face_cls_loss, 'bbox_reg': bbox_reg_smooth_l1_loss,
+                    'ldmk_reg': ldmk_reg_smooth_l1_loss}
+            loss_weights = {'face_cls': 1.0, 'bbox_reg': 0.5, 'ldmk_reg': 1.0}
+            metrics = {'face_cls': [precision, f1_score, accuracy]}
+            net_input_size = 48
+            saved_name = "savedmodel/model_onet.h5"
+        elif i == 1:
+            model = models.make_pnet()
+            loss = {'face_cls': face_cls_loss, 'bbox_reg': bbox_reg_mse_loss,
+                    'ldmk_reg': ldmk_reg_mse_loss}
+            loss_weights = {'face_cls': 1.0, 'bbox_reg': 0.5, 'ldmk_reg': 0.5}
+            metrics = {'face_cls': [recall, accuracy]}
+            net_input_size = 12
+            saved_name = "savedmodel/model_pnet.h5"
+        elif i == 2:
+            model = models.make_rnet()
+            loss = {'face_cls': face_cls_loss, 'bbox_reg': bbox_reg_smooth_l1_loss,
+                    'ldmk_reg': ldmk_reg_smooth_l1_loss}
+            loss_weights = {'face_cls': 1.0, 'bbox_reg': 0.5, 'ldmk_reg': 0.5}
+            metrics = {'face_cls': [precision, f1_score, accuracy]}
+            net_input_size = 24
+            saved_name = "savedmodel/model_rnet.h5"
 
-    model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.001),  # Optimizer
-                  loss=loss,
-                  #   loss=tf.keras.losses.MSE,
-                  loss_weights=loss_weights,
-                  metrics=metrics)
-# datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_dir = "logs"
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=log_dir)
-    #
+        # model.load_weights(saved_name)
 
-    datagener = datagen.augmented_data_generator(
-        net_input_size, net_input_size)
+        model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.001),  # Optimizer
+                      loss=loss,
+                      #   loss=tf.keras.losses.MSE,
+                      loss_weights=loss_weights,
+                      metrics=metrics)
 
-    history = model.fit(datagener, epochs=10, use_multiprocessing=False, workers=0,
-                        steps_per_epoch=1000, shuffle=True, callbacks=[tensorboard_callback])
+        log_dir = "logs"
+        tensorboard_callback = tf.keras.callbacks.TensorBoard(
+            log_dir=log_dir)
+        #
 
-    print('\nhistory dict:', history.history)
-    model.save(saved_name)
+        datagener = datagen.augmented_data_generator(
+            net_input_size, net_input_size)
+
+        history = model.fit(datagener, epochs=2, use_multiprocessing=False, workers=0,
+                            steps_per_epoch=10000, shuffle=True, callbacks=[tensorboard_callback])
+
+        print('\nhistory dict:', history.history)
+        model.save(saved_name)
 
     pass

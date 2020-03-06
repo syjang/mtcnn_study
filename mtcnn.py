@@ -2,7 +2,7 @@ import tensorflow.keras as keras
 import numpy as np
 
 import cv2
-import model
+import models
 import utils
 
 
@@ -310,16 +310,20 @@ if __name__ == '__main__':
 
     mtcnn = MTCNN()
 
-    model_pent = model.make_pnet(train=False)
+    model_pent = models.make_pnet(train=False)
     model_pent.load_weights('savedmodel/model_pnet.h5')
 
-    model_rnet = model.make_rnet(train=False)
+    model_rnet = models.make_rnet(train=False)
     model_rnet.load_weights('savedmodel/model_rnet.h5')
 
-    model_onet = model.make_onet(train=False)
+    model_onet = models.make_onet(train=False)
     model_onet.load_weights('savedmodel/model_onet.h5')
 
     bboxes = mtcnn.stage_PNet(model_pent, img)
+
+    if bboxes.shape[0] == 0:
+        print("Empty")
+        exit(0)
 
     bboxes = mtcnn.stage_RNet(model_rnet, img, bboxes)
 
